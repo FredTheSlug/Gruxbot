@@ -1,4 +1,4 @@
-# pred-bot
+# Gruxbot
 
 Discord bot for **Predecessor** stats using **[pred.gg](https://pred.gg)** GraphQL, with an optional **[omeda.city](https://omeda.city)** REST fallback for player search and match history.
 
