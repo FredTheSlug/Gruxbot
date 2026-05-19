@@ -47,6 +47,8 @@ Without OAuth, the bot falls back to omeda.city’s legacy JSON endpoints for pl
 
 Uses pred.gg `hero.coreBuild` GraphQL (same data as hero pages, e.g. `https://pred.gg/heroes/boris?gameModes=RANKED&role=JUNGLE&ranks=36`). Filters are fixed to **Ranked** and **Paragon** for the current season patch.
 
+**Build stats vs OAuth:** pred.gg often allows OAuth apps for player/match queries but returns `Forbidden` on `hero.coreBuild`. If `/build` fails that way, set `PRED_GQL_BUILD_AUTHORIZATION` to the `Authorization` header value from your browser while logged in on pred.gg (DevTools → Network → `gql` request on a hero page). Run `python -m pred_bot.auth_status` to see which fields work with your current config.
+
 ## Requirements
 
 - Python 3.11+ (tested on 3.13)
@@ -101,6 +103,7 @@ Set `GUILD_ID` to your test server ID. The bot will `copy_global_to` that guild 
 | `PRED_OAUTH_SCOPE` | `read` | Required for pred.gg authorize |
 | `OAUTH_TOKEN_PATH` | `data/oauth_tokens.json` | Saved tokens after `python -m pred_bot.auth` |
 | `PRED_GQL_AUTHORIZATION` | — | Optional static `Bearer …` (skips OAuth file) |
+| `PRED_GQL_BUILD_AUTHORIZATION` | — | Optional `Bearer …` used only for `/build` (hero.coreBuild) |
 | `STATS_WEB_BASE_URL` | `https://pred.gg` | Links in embeds |
 | `STATS_USE_OMEDA_FALLBACK` | `true` | Use omeda.city REST when pred.gg returns Forbidden |
 | `OMEDA_BASE_URL` | `https://omeda.city` | Legacy fallback API base |

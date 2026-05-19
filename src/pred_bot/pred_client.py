@@ -15,6 +15,16 @@ log = logging.getLogger(__name__)
 
 CURRENT_SEASON_RATING_ID = "11"
 
+CORE_BUILD_FORBIDDEN_HELP = (
+    "pred.gg allows your OAuth token for player/match data, but not hero build stats "
+    "(hero.coreBuild returned Forbidden).\n\n"
+    "Fix options:\n"
+    "1. Set PRED_GQL_BUILD_AUTHORIZATION in .env to the Bearer token from your browser "
+    "(pred.gg → DevTools → Network → POST /gql while viewing a hero page → copy Authorization).\n"
+    "2. Ask pred.gg (Discord: c0re42) to enable build/hero stats for your OAuth application.\n"
+    "3. Or set PRED_GQL_AUTHORIZATION to that same browser Bearer for all pred.gg queries."
+)
+
 
 class PredAuthRequired(Exception):
     """Raised when pred.gg GraphQL returns Forbidden on a field."""
@@ -31,6 +41,7 @@ class PredGqlClient:
         oauth_client_id: str | None = None,
         oauth_client_secret: str | None = None,
         oauth_token_url: str = "https://pred.gg/api/oauth2/token",
+        build_authorization: str | None = None,
         max_concurrency: int = 5,
         max_retries: int = 3,
     ) -> None:
@@ -41,6 +52,7 @@ class PredGqlClient:
             "Content-Type": "application/json",
         }
         self._static_authorization = authorization
+        self._build_authorization = build_authorization
         self._oauth_store = oauth_store
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
@@ -69,6 +81,8 @@ class PredGqlClient:
         client: httpx.AsyncClient,
         query: str,
         variables: dict[str, Any] | None = None,
+        *,
+        authorization_override: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"query": query}
         if variables:
@@ -78,6 +92,8 @@ class PredGqlClient:
             for attempt in range(self._max_retries):
                 try:
                     headers = await self._request_headers(client)
+                    if authorization_override:
+                        headers["Authorization"] = authorization_override
                     resp = await client.post(self._gql_url, headers=headers, json=body)
                     if resp.status_code == 403:
                         raise PredAuthRequired(f"pred.gg GraphQL forbidden: {self._gql_url}")
@@ -89,7 +105,26 @@ class PredGqlClient:
                     if payload.get("errors"):
                         for err in payload["errors"]:
                             if err.get("message") == "Forbidden":
-                                raise PredAuthRequired(str(err))
+                                path = err.get("path") or []
+                                if path[:2] == ["hero", "coreBuild"]:
+                                    if authorization_override:
+                                        raise PredAuthRequired(
+                                            "hero.coreBuild is still Forbidden with "
+                                            "PRED_GQL_BUILD_AUTHORIZATION. Use a fresh "
+                                            "browser Bearer from pred.gg while logged in."
+                                        )
+                                    req_headers = headers
+                                    if "Authorization" not in req_headers:
+                                        raise PredAuthRequired(
+                                            "hero.coreBuild requires pred.gg OAuth — set "
+                                            "PRED_OAUTH_CLIENT_ID/SECRET and run "
+                                            "python -m pred_bot.auth"
+                                        )
+                                    raise PredAuthRequired(CORE_BUILD_FORBIDDEN_HELP)
+                                raise PredAuthRequired(
+                                    f"pred.gg GraphQL Forbidden"
+                                    + (f" ({'.'.join(str(p) for p in path)})" if path else "")
+                                )
                         log.warning("GraphQL errors: %s", payload["errors"][:2])
                         if payload.get("data") is None:
                             first = payload["errors"][0].get("message", "GraphQL error")
@@ -471,22 +506,26 @@ class PredGqlClient:
             "limit": limit,
             "filter": build_filter,
         }
+        build_auth = self._build_authorization
         payload = await self.execute(
             client,
             self._HERO_CORE_BUILD_QUERY,
             variables,
+            authorization_override=build_auth,
         )
         if self._forbidden_in_payload(payload, ["hero", "coreBuild"]):
             headers = await self._request_headers(client)
+            if build_auth:
+                raise PredAuthRequired(
+                    "hero.coreBuild is still Forbidden with PRED_GQL_BUILD_AUTHORIZATION. "
+                    "Copy a fresh Bearer from pred.gg (logged in) or ask pred.gg to enable build access."
+                )
             if "Authorization" not in headers:
                 raise PredAuthRequired(
                     "hero.coreBuild requires pred.gg OAuth — set PRED_OAUTH_CLIENT_ID/SECRET "
                     "and OAUTH_TOKEN_PATH, or run python -m pred_bot.auth"
                 )
-            raise PredAuthRequired(
-                "pred.gg denied hero.coreBuild for this OAuth app (Forbidden). "
-                "Confirm your pred.gg application has build/stats access."
-            )
+            raise PredAuthRequired(CORE_BUILD_FORBIDDEN_HELP)
         hero = (payload.get("data") or {}).get("hero") or {}
         core = hero.get("coreBuild") or {}
         results = core.get("results") or []

@@ -9,6 +9,17 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _normalize_bearer(value: str | None) -> str | None:
+    if not value:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    if trimmed.lower().startswith("bearer "):
+        return trimmed
+    return f"Bearer {trimmed}"
+
+
 class Config:
     discord_token: str
     omeda_base_url: str
@@ -21,7 +32,12 @@ class Config:
     def __init__(self) -> None:
         self.discord_token = os.environ["DISCORD_BOT_TOKEN"]
         self.pred_gql_url = os.environ.get("PRED_GQL_URL", "https://pred.gg/gql").rstrip("/")
-        self.pred_gql_authorization = os.environ.get("PRED_GQL_AUTHORIZATION") or None
+        self.pred_gql_authorization = _normalize_bearer(
+            os.environ.get("PRED_GQL_AUTHORIZATION")
+        )
+        self.pred_gql_build_authorization = _normalize_bearer(
+            os.environ.get("PRED_GQL_BUILD_AUTHORIZATION")
+        )
         raw_client_id = os.environ.get("PRED_OAUTH_CLIENT_ID")
         raw_client_secret = os.environ.get("PRED_OAUTH_CLIENT_SECRET")
         self.pred_oauth_client_id = raw_client_id.strip() if raw_client_id else None

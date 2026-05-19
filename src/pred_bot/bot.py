@@ -54,6 +54,7 @@ class PredBot(commands.Bot):
         pred = PredGqlClient(
             self.config.pred_gql_url,
             authorization=self.config.pred_gql_authorization,
+            build_authorization=self.config.pred_gql_build_authorization,
             oauth_store=oauth_store,
             oauth_client_id=self.config.pred_oauth_client_id,
             oauth_client_secret=self.config.pred_oauth_client_secret,
