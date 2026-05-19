@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
+if TYPE_CHECKING:
+    from pred_bot.oauth_tokens import OAuthTokenStore
+
 log = logging.getLogger(__name__)
+
+CURRENT_SEASON_RATING_ID = "11"
 
 
 class PredAuthRequired(Exception):
@@ -42,6 +47,8 @@ class PredGqlClient:
         self._oauth_token_url = oauth_token_url.rstrip("/")
         self._max_retries = max(1, max_retries)
         self._sem = asyncio.Semaphore(max(1, max_concurrency))
+        self._versions: list[dict[str, Any]] | None = None
+        self._paragon_rank_ids: list[str] | None = None
 
     async def _request_headers(self, client: httpx.AsyncClient) -> dict[str, str]:
         headers = dict(self._base_headers)
@@ -335,6 +342,149 @@ class PredGqlClient:
         rating = (payload.get("data") or {}).get("rating") or {}
         ranks = rating.get("ranks") or []
         return [r for r in ranks if isinstance(r, dict)]
+
+    async def get_game_versions(self, client: httpx.AsyncClient) -> list[dict[str, Any]]:
+        if self._versions is not None:
+            return self._versions
+        payload = await self.execute(
+            client,
+            """
+            query Versions {
+              versions { id name }
+            }
+            """,
+        )
+        versions = (payload.get("data") or {}).get("versions") or []
+        self._versions = [v for v in versions if isinstance(v, dict) and v.get("id") is not None]
+        return self._versions
+
+    async def get_current_version_ids(self, client: httpx.AsyncClient) -> list[str]:
+        versions = await self.get_game_versions(client)
+        if not versions:
+            return []
+        latest = max(versions, key=lambda v: int(v["id"]))
+        return [str(latest["id"])]
+
+    async def get_paragon_rank_ids(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        rating_id: str = CURRENT_SEASON_RATING_ID,
+    ) -> list[str]:
+        if self._paragon_rank_ids is not None:
+            return list(self._paragon_rank_ids)
+        ranks = await self.get_rating_ranks(client, rating_id=rating_id)
+        ids = [
+            str(r["id"])
+            for r in ranks
+            if isinstance(r, dict)
+            and r.get("id") is not None
+            and str(r.get("tierName") or "").strip().lower() == "paragon"
+        ]
+        self._paragon_rank_ids = ids
+        return list(ids)
+
+    _HERO_CORE_BUILD_QUERY = """
+        query HeroBuildData($slug: String!, $filter: HeroCoreBuildFilterInput, $limit: Int!) {
+          hero(by: { slug: $slug }) {
+            slug
+            data {
+              displayName
+              icon
+            }
+            coreBuild(filter: $filter, limit: $limit) {
+              results {
+                matchesPlayedBuildOrder
+                matchesWonBuildOrder
+                core1Item {
+                  id
+                  data {
+                    displayName
+                    icon
+                    smallIcon
+                    item { slug }
+                  }
+                }
+                core2Item {
+                  id
+                  data {
+                    displayName
+                    icon
+                    smallIcon
+                    item { slug }
+                  }
+                }
+                core3Item {
+                  id
+                  data {
+                    displayName
+                    icon
+                    smallIcon
+                    item { slug }
+                  }
+                }
+                crests: items(slot: CREST, limit: 3) {
+                  matchesPlayedBuildOrder
+                  matchesWonBuildOrder
+                  item {
+                    id
+                    data {
+                      displayName
+                      icon
+                      smallIcon
+                      item { slug }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+    """
+
+    async def get_hero_core_build(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        hero_slug: str,
+        role: str,
+        limit: int = 1,
+    ) -> dict[str, Any]:
+        role_enum = role.strip().upper().replace("-", "")
+        paragon_ids = await self.get_paragon_rank_ids(client)
+        if not paragon_ids:
+            log.warning("no Paragon rank ids found for rating %s", CURRENT_SEASON_RATING_ID)
+        version_ids = await self.get_current_version_ids(client)
+        if not version_ids:
+            log.warning("no game versions returned from pred.gg")
+
+        build_filter: dict[str, Any] = {
+            "gameModes": ["RANKED"],
+            "roles": [role_enum],
+            "ranks": paragon_ids,
+            "versions": version_ids,
+        }
+        payload = await self.execute(
+            client,
+            self._HERO_CORE_BUILD_QUERY,
+            {
+                "slug": hero_slug.strip().lower(),
+                "limit": limit,
+                "filter": build_filter,
+            },
+        )
+        if self._forbidden_in_payload(payload, ["hero", "coreBuild"]):
+            raise PredAuthRequired("hero.coreBuild requires auth")
+        hero = (payload.get("data") or {}).get("hero") or {}
+        core = hero.get("coreBuild") or {}
+        results = core.get("results") or []
+        return {
+            "hero": hero,
+            "results": [r for r in results if isinstance(r, dict)],
+            "filter": build_filter,
+            "paragon_rank_ids": paragon_ids,
+            "version_ids": version_ids,
+        }
 
     async def get_match(self, client: httpx.AsyncClient, match_id: str) -> Any:
         payload = await self.execute(

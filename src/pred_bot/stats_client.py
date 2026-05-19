@@ -166,6 +166,35 @@ class StatsClient:
     async def get_items(self, client: httpx.AsyncClient) -> Any:
         return await self._pred.get_items(client)
 
+    async def get_hero_core_build(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        hero_slug: str,
+        role: str,
+        limit: int = 1,
+    ) -> dict[str, Any]:
+        return await self._pred.get_hero_core_build(
+            client,
+            hero_slug=hero_slug,
+            role=role,
+            limit=limit,
+        )
+
+    def hero_build_url(
+        self,
+        hero_slug: str,
+        role: str,
+        *,
+        paragon_rank_ids: list[str] | None = None,
+    ) -> str:
+        role_enum = role.strip().upper()
+        ranks = ",".join(paragon_rank_ids) if paragon_rank_ids else ""
+        url = f"{self.web_base_url}/heroes/{hero_slug.strip().lower()}?gameModes=RANKED&role={role_enum}"
+        if ranks:
+            url = f"{url}&ranks={ranks}"
+        return url
+
     async def get_match(self, client: httpx.AsyncClient, match_id: str) -> MatchDetail | dict[str, Any]:
         raw: Any = {}
         try:

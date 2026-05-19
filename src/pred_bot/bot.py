@@ -74,11 +74,12 @@ class PredBot(commands.Bot):
         else:
             log.info("Stats API: pred.gg GraphQL only (%s)", self.config.pred_gql_url)
 
-        from pred_bot.commands import follow, hero, item, match, player
+        from pred_bot.commands import build, follow, hero, item, match, player
 
         player.register(self)
         hero.register(self)
         item.register(self)
+        build.register(self)
         follow.register(self)
         match.register(self)
 

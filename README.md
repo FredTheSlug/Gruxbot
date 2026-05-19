@@ -6,6 +6,7 @@ Discord bot for **Predecessor** stats using **[pred.gg](https://pred.gg)** Graph
 
 - `/player` — look up a player by name or UUID; show recent matches
 - `/hero` — resolve a hero from `/heroes.json` and show dashboard stats when available
+- `/build` — top 3 core items and top 3 crests for a hero and role (Ranked · Paragon · current patch, via pred.gg)
 - `/item` — resolve an item from `/items.json`
 - `/follow` / `/unfollow` / `/following` — poll match history and post new-match notifications in-channel
 - `/followcheck` — run the follow check immediately (posts any missed notifications)
@@ -40,7 +41,11 @@ It must match exactly (including `http`, not `https`).
 
 3. Start the bot as usual. Tokens refresh automatically.
 
-Without OAuth, the bot falls back to omeda.city’s legacy JSON endpoints for player search and match history (`STATS_USE_OMEDA_FALLBACK=true`, default).
+Without OAuth, the bot falls back to omeda.city’s legacy JSON endpoints for player search and match history (`STATS_USE_OMEDA_FALLBACK=true`, default). `/build` requires pred.gg OAuth (same tokens as match history).
+
+### `/build` (hero core items + crests)
+
+Uses pred.gg `hero.coreBuild` GraphQL (same data as hero pages, e.g. `https://pred.gg/heroes/boris?gameModes=RANKED&role=JUNGLE&ranks=36`). Filters are fixed to **Ranked** and **Paragon** for the current season patch.
 
 ## Requirements
 
