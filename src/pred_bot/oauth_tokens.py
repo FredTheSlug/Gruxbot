@@ -74,15 +74,20 @@ class OAuthTokenStore:
         client: httpx.AsyncClient,
         *,
         token_url: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str | None,
+        client_secret: str | None,
     ) -> str | None:
-        tokens = await self.get_valid_tokens(
-            client,
-            token_url=token_url,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
+        if client_id and client_secret:
+            tokens = await self.get_valid_tokens(
+                client,
+                token_url=token_url,
+                client_id=client_id,
+                client_secret=client_secret,
+            )
+        else:
+            tokens = self.load()
+            if tokens and self.is_expired(tokens):
+                return None
         if not tokens:
             return None
         return self.authorization_header(tokens)

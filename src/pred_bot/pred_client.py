@@ -53,12 +53,7 @@ class PredGqlClient:
     async def _request_headers(self, client: httpx.AsyncClient) -> dict[str, str]:
         headers = dict(self._base_headers)
         auth = self._static_authorization
-        if (
-            not auth
-            and self._oauth_store
-            and self._oauth_client_id
-            and self._oauth_client_secret
-        ):
+        if not auth and self._oauth_store:
             auth = await self._oauth_store.get_authorization_header(
                 client,
                 token_url=self._oauth_token_url,
@@ -385,7 +380,12 @@ class PredGqlClient:
         return list(ids)
 
     _HERO_CORE_BUILD_QUERY = """
-        query HeroBuildData($slug: String!, $filter: HeroCoreBuildFilterInput, $limit: Int!) {
+        query HeroBuildData(
+          $slug: String!
+          $dataVersion: ID
+          $filter: HeroCoreBuildFilterInput
+          $limit: Int!
+        ) {
           hero(by: { slug: $slug }) {
             slug
             data {
@@ -464,17 +464,29 @@ class PredGqlClient:
             "ranks": paragon_ids,
             "versions": version_ids,
         }
+        variables: dict[str, Any] = {
+            "slug": hero_slug.strip().lower(),
+            "limit": limit,
+            "filter": build_filter,
+        }
+        if version_ids:
+            variables["dataVersion"] = version_ids[-1]
         payload = await self.execute(
             client,
             self._HERO_CORE_BUILD_QUERY,
-            {
-                "slug": hero_slug.strip().lower(),
-                "limit": limit,
-                "filter": build_filter,
-            },
+            variables,
         )
         if self._forbidden_in_payload(payload, ["hero", "coreBuild"]):
-            raise PredAuthRequired("hero.coreBuild requires auth")
+            headers = await self._request_headers(client)
+            if "Authorization" not in headers:
+                raise PredAuthRequired(
+                    "hero.coreBuild requires pred.gg OAuth — set PRED_OAUTH_CLIENT_ID/SECRET "
+                    "and OAUTH_TOKEN_PATH, or run python -m pred_bot.auth"
+                )
+            raise PredAuthRequired(
+                "pred.gg denied hero.coreBuild for this OAuth app (Forbidden). "
+                "Confirm your pred.gg application has build/stats access."
+            )
         hero = (payload.get("data") or {}).get("hero") or {}
         core = hero.get("coreBuild") or {}
         results = core.get("results") or []

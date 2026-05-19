@@ -33,14 +33,24 @@ class PredBot(commands.Bot):
     async def setup_hook(self) -> None:
         await self.follow_store.init()
         self.http_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
-        oauth_store = None
-        if self.config.pred_oauth_client_id and self.config.pred_oauth_client_secret:
-            oauth_store = OAuthTokenStore(self.config.oauth_token_path)
-            if not oauth_store.load() and not self.config.pred_gql_authorization:
-                log.warning(
-                    "pred.gg OAuth configured but no tokens at %s — run: python -m pred_bot.auth",
-                    self.config.oauth_token_path,
-                )
+        oauth_store = OAuthTokenStore(self.config.oauth_token_path)
+        has_tokens = oauth_store.load() is not None
+        has_oauth_creds = bool(
+            self.config.pred_oauth_client_id and self.config.pred_oauth_client_secret
+        )
+        if not has_oauth_creds and not has_tokens and not self.config.pred_gql_authorization:
+            oauth_store = None
+        elif has_tokens and not has_oauth_creds:
+            log.warning(
+                "pred.gg tokens at %s but PRED_OAUTH_CLIENT_ID/SECRET missing — "
+                "using access token only until it expires (refresh disabled)",
+                self.config.oauth_token_path,
+            )
+        elif has_oauth_creds and not has_tokens and not self.config.pred_gql_authorization:
+            log.warning(
+                "pred.gg OAuth configured but no tokens at %s — run: python -m pred_bot.auth",
+                self.config.oauth_token_path,
+            )
         pred = PredGqlClient(
             self.config.pred_gql_url,
             authorization=self.config.pred_gql_authorization,

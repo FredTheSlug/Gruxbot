@@ -122,11 +122,8 @@ def register(bot: PredBot) -> None:
                 hero_slug=hero_slug,
                 role=role_value,
             )
-        except StatsAuthRequired:
-            await interaction.followup.send(
-                "Build data requires pred.gg OAuth (`python -m pred_bot.auth`) with access to hero builds.",
-                ephemeral=True,
-            )
+        except StatsAuthRequired as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
             return
         except Exception as e:
             log.exception("build: coreBuild failed hero=%s role=%s", hero_slug, role_value)
