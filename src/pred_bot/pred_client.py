@@ -91,6 +91,9 @@ class PredGqlClient:
                             if err.get("message") == "Forbidden":
                                 raise PredAuthRequired(str(err))
                         log.warning("GraphQL errors: %s", payload["errors"][:2])
+                        if payload.get("data") is None:
+                            first = payload["errors"][0].get("message", "GraphQL error")
+                            raise RuntimeError(f"pred.gg GraphQL: {first}")
                     return payload
                 except (httpx.TimeoutException, httpx.TransportError) as e:
                     last_exc = e
@@ -382,7 +385,6 @@ class PredGqlClient:
     _HERO_CORE_BUILD_QUERY = """
         query HeroBuildData(
           $slug: String!
-          $dataVersion: ID
           $filter: HeroCoreBuildFilterInput
           $limit: Int!
         ) {
@@ -469,8 +471,6 @@ class PredGqlClient:
             "limit": limit,
             "filter": build_filter,
         }
-        if version_ids:
-            variables["dataVersion"] = version_ids[-1]
         payload = await self.execute(
             client,
             self._HERO_CORE_BUILD_QUERY,
